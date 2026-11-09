@@ -63,7 +63,7 @@ void ID_SCREEN_00__ID_SLIDER_00__WM_NOTIFICATION_VALUE_CHANGED(APPW_ACTION_ITEM 
   int Val;
   Val = APPW_GetValue(ID_SCREEN_00, ID_SLIDER_00, NULL);
   //Val vaut une valeur entre 0 et 100
-	DAC->DHR12R1 = (Val/100)*4095;
+	DAC->DHR12R1 = (Val/100.0)*4095.0;
   
 }
 
@@ -75,11 +75,11 @@ void ID_SCREEN_00__ID_ROTARY_00__WM_NOTIFICATION_VALUE_CHANGED(APPW_ACTION_ITEM 
   int Val;
   Val = APPW_GetValue(ID_SCREEN_00, ID_ROTARY_00, NULL);
   //Val vaut une valeur entre -300 et 300
-  TIM10->CCR1 = Val;
+	TIM10->CCR1 = Val+300;
 }
 
 /*********************************************************************
-*
+*   
 *       ID_SCREEN_00__APPW_NOTIFICATION_INITDIALOG__ID_TIMER_00__APPW_JOB_START
 */
 void ID_SCREEN_00__APPW_NOTIFICATION_INITDIALOG__ID_TIMER_00__APPW_JOB_START(APPW_ACTION_ITEM * pAction, WM_HWIN hScreen, WM_MESSAGE * pMsg, int * pResult) {
@@ -94,11 +94,9 @@ void ID_SCREEN_00__APPW_NOTIFICATION_INITDIALOG__ID_TIMER_00__APPW_JOB_START(APP
 *       ID_SCREEN_00__ID_TIMER_00__APPW_NOTIFICATION_TIMER
 */
 void ID_SCREEN_00__ID_TIMER_00__APPW_NOTIFICATION_TIMER(APPW_ACTION_ITEM * pAction, WM_HWIN hScreen, WM_MESSAGE * pMsg, int * pResult) {
-	int Val;
-	ADC3->CR2 |= (1<<30);
-	while((ADC3->SR & (1<<1))==0);
-	Val = ADC3->DR;
-  APPW_SetValue(ID_SCREEN_00,ID_GAUGE_00,Val);
+
+	APPW_SetValue(ID_SCREEN_00,ID_GAUGE_00,ADC3->DR); 
+	ADC3->CR2 |= (1<<30); // Demarage de la converstion 
 }
 
 /*************************** End of file ****************************/

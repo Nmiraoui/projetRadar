@@ -3,13 +3,15 @@
 extern void configuration_overclock(void);
 extern int Init_GUIThread (void);
 extern void Init_Ethernet (void);
+extern void servo_set_angle(int deg);
 
 #ifdef _RTE_
 #include "RTE_Components.h"             // Component selection
 #endif
 #ifdef RTE_CMSIS_RTOS2                  // when RTE component CMSIS RTOS2 is used
 #include "cmsis_os2.h"                  // ::CMSIS:RTOS2
-#endif
+#endif       
+
 
 /*----------------------------------------------------------------------------
  *      Tâche de test (vide) : à compléter par les étudiants
@@ -18,6 +20,7 @@ osThreadId_t tid_Test;
 
 static void Thread_Test (void *argument)
 {
+	int deg;
   (void)argument;
 
   // Initialisations propres à la tâche (si besoin) ici
@@ -25,6 +28,7 @@ static void Thread_Test (void *argument)
   while (1)
   {
     // Votre boucle de test ici (mesure de distance, balayage du servo, etc.)
+		//servo_set_angle(deg);
 
     osDelay(100);   // période de la boucle : 100 ms
   }
@@ -37,6 +41,10 @@ static int Init_TestThread (void)
     return -1;
   }
   return 0;
+}
+
+void servo_set_angle(int deg)
+{
 }
 
 
@@ -55,11 +63,11 @@ int main(void)
 	RCC->APB1ENR |= (1<<29);
 	RCC->AHB1ENR |= (1<<0);
 	
-	GPIOA->MODER |= (3<<8);
+	GPIOA->MODER |= (3<<8); //PA4 output
 	
 	DAC->CR |= (1<<0);
 	
-	// Gauge
+	//Rotary
 	RCC-> AHB1ENR |= (1 << 5) ;
 	RCC->APB2ENR |= (1 << 17);
 	
@@ -69,8 +77,9 @@ int main(void)
 	TIM10->CCMR1 |= (6 << 4) ;
 	TIM10-> CCER |= (1 << 0);
 	
-	TIM10->PSC = 7;
+	TIM10->PSC = 7; 
 	TIM10-> ARR = 39999;
+	TIM10->CCR1 = 4000;
 	
 	TIM10->CR1 |= (1 << 0);
 	
