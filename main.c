@@ -21,6 +21,7 @@ osThreadId_t tid_Test;
 static void Thread_Test (void *argument)
 {
 	int deg;
+	int Echo;
   (void)argument;
 
   // Initialisations propres à la tâche (si besoin) ici
@@ -29,7 +30,7 @@ static void Thread_Test (void *argument)
   {
     // Votre boucle de test ici (mesure de distance, balayage du servo, etc.)
 		//servo_set_angle(deg);
-
+		//Echo = GPIOI->IDR | (1<<0);
     osDelay(100);   // période de la boucle : 100 ms
   }
 }
@@ -45,6 +46,7 @@ static int Init_TestThread (void)
 
 void servo_set_angle(int deg)
 {
+	
 }
 
 
@@ -67,27 +69,46 @@ int main(void)
 	
 	DAC->CR |= (1<<0);
 	
-	//Rotary
-	RCC-> AHB1ENR |= (1 << 5) ;
-	RCC->APB2ENR |= (1 << 17);
+	// Timer 50 Hz - Servo
+	RCC-> AHB1ENR |= (1 << 5) ; // Active GPIOF
+	RCC->AHB2ENR |= (1<<14); // enable syscfg
+	//RCC->APB2ENR |= (1 << 17); // Activie TIM10
 	
-	GPIOF-> MODER |= (2 << 12);
-	GPIOF-> AFR[0] |= (3 << 24);
+	//GPIOF-> MODER |= (2 << 12); //PF6 in AF mode
+	//GPIOF-> AFR[0] |= (3 << 24); //PF6 in AF3 mode 
 	
-	TIM10->CCMR1 |= (6 << 4) ;
-	TIM10-> CCER |= (1 << 0);
+	//TIM10->CCMR1 |= (6 << 4); //TIM10_CH1 in PWM mode 1
+	//TIM10-> CCER |= (1 << 0); //connects OC1 to TIM10_CH1
 	
-	TIM10->PSC = 7; 
-	TIM10-> ARR = 39999;
-	TIM10->CCR1 = 4000;
+	//TIM10->PSC = 79; //prescaler
+	//TIM10-> ARR = 49999; //periode
+	//TIM10->CCR1 = 4000; // Duty cycle                                                                                                           
 	
-	TIM10->CR1 |= (1 << 0);
+	//TIM10->CR1 |= (1 << 0); //starts counter
 	
 	// Potentiomètre 
 	RCC->AHB2ENR |= (1<<10);
-	GPIOF->MODER |= (3<<20);
+	GPIOF->MODER |= (3<<20); 
 	
 	ADC3->CR2 |= (1<<0);
+	
+	//Timer 1 Hz - Sensor
+	// GPIOF activated
+	RCC->APB2ENR |= (1 << 18); // Activie TIM11
+	
+	GPIOF-> MODER |= (2 << 14); //PF7 in AF mode
+	GPIOF-> AFR[0] |= (3 << 28); //PF7 in AF3 mode 
+	
+	TIM11->CCMR1 |= (6 << 4); //TIM11_CH1 in PWM mode 1
+	TIM11-> CCER |= (1 << 0); //connects OC1 to TIM10_CH1
+	
+	TIM11->PSC = 399; //prescaler
+	TIM11-> ARR = 49999; //periode
+	TIM11->CCR1 = 5; // Duty cycle
+	
+	TIM11->CR1 |= (1 << 0); //starts counter
+	
+	
 	
 	/**********************************
 	Fin Initialisation périphérique

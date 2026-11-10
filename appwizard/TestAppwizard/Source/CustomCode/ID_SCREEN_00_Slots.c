@@ -95,8 +95,8 @@ void ID_SCREEN_00__APPW_NOTIFICATION_INITDIALOG__ID_TIMER_00__APPW_JOB_START(APP
 */
 void ID_SCREEN_00__ID_TIMER_00__APPW_NOTIFICATION_TIMER(APPW_ACTION_ITEM * pAction, WM_HWIN hScreen, WM_MESSAGE * pMsg, int * pResult) {
 
-	APPW_SetValue(ID_SCREEN_00,ID_GAUGE_00,ADC3->DR); 
-	ADC3->CR2 |= (1<<30); // Demarage de la converstion 
+	//APPW_SetValue(ID_SCREEN_00,ID_GAUGE_00,ADC3->DR); 
+	//ADC3->CR2 |= (1<<30); // Demarage de la converstion 
 }
 
 /*************************** End of file ****************************/
