@@ -159,8 +159,9 @@ int main(void)
 	
 	NVIC_EnableIRQ(EXTI9_5_IRQn);
 	
-	TIM2->PSC = 199;        // horloge à 16MHz / (15+1) = 1MHz -> tick de 1µs
-	TIM2->ARR = 0xFFFFFFFF; // valeur max (32 bits)
+	TIM2->PSC = 99;          // TIM2 est sur APB1 : 100 MHz / 100 = 1 MHz, soit 1 µs par tick
+	TIM2->ARR = 0xFFFFFFFF;
+	TIM2->EGR = 1;           // force le chargement du prescaler
 	TIM2->CNT = 0;
 	// On NE met PAS CEN à 1 ici : le timer reste à l'arrêt
 	
