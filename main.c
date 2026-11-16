@@ -5,6 +5,8 @@ extern int Init_GUIThread (void);
 extern void Init_Ethernet (void);
 extern void servo_set_angle(int deg);
 
+volatile uint32_t mesure_us = 0;
+volatile uint8_t  nouvelle_mesure = 0;
 volatile float     DIST = -1.0f;
 
 #ifdef _RTE_
@@ -77,6 +79,11 @@ void EXTI9_5_IRQHandler(void)
 
 		EXTI->PR |= (1 << 6);  // acquitte le flag de la ligne 6
 	}
+}
+
+float distance_cm(void)
+{
+    return DIST;
 }
 
 int main(void)
