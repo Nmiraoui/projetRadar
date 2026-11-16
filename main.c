@@ -143,7 +143,7 @@ int main(void)
 	TIM11->CCR1 = 5; // Duty cycle
 	
 	TIM11->CR1 |= (1 << 0); //starts counter
-	
+
 	// Interutpion
 	RCC->AHB1ENR |= (1 << 4);   // activate GPIOE
 	RCC->APB2ENR |= (1 << 14);  // activate SYSCFG (nécessaire pour EXTI)
@@ -163,8 +163,6 @@ int main(void)
 	TIM2->ARR = 0xFFFFFFFF; // valeur max (32 bits)
 	TIM2->CNT = 0;
 	// On NE met PAS CEN à 1 ici : le timer reste à l'arrêt
-	
-
 	
 	/**********************************
 	Fin Initialisation périphérique

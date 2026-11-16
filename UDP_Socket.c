@@ -41,8 +41,8 @@ uint32_t udp_cb_func (int32_t socket, const NET_ADDR *addr, const uint8_t *buf, 
         } else {
             sprintf(response, "ERR INVALID_ANGLE\n");
         }
-    }/* 
-   else if (strcmp(command, "DIST") == 0) {
+    }
+   else if (strncmp(command, "DIST", 4) == 0) {
         // Commande DIST reçue
         float dist = distance_cm();
         
@@ -55,7 +55,7 @@ uint32_t udp_cb_func (int32_t socket, const NET_ADDR *addr, const uint8_t *buf, 
     else {
         // Si la commande ne correspond à rien de connu
         sprintf(response, "ERR UNKNOWN_COMMAND\n");
-    }*/
+    }
 
     // 3. Envoi de la réponse au client UDP
     resp_len = strlen(response);
