@@ -46,7 +46,12 @@ static int Init_TestThread (void)
 
 void servo_set_angle(int deg)
 {
+	if(deg<0) deg = 0;
+	if(deg>180) deg=180;
 	
+	uint32_t ccr_val =2000+((uint32_t)deg*4000)/180;
+	
+	TIM10->CCR1 = ccr_val;
 }
 
 
@@ -72,19 +77,19 @@ int main(void)
 	// Timer 50 Hz - Servo
 	RCC-> AHB1ENR |= (1 << 5) ; // Active GPIOF
 	RCC->AHB2ENR |= (1<<14); // enable syscfg
-	//RCC->APB2ENR |= (1 << 17); // Activie TIM10
+	RCC->APB2ENR |= (1 << 17); // Activie TIM10
 	
-	//GPIOF-> MODER |= (2 << 12); //PF6 in AF mode
-	//GPIOF-> AFR[0] |= (3 << 24); //PF6 in AF3 mode 
+	GPIOF-> MODER |= (2 << 12); //PF6 in AF mode
+	GPIOF-> AFR[0] |= (3 << 24); //PF6 in AF3 mode 
 	
-	//TIM10->CCMR1 |= (6 << 4); //TIM10_CH1 in PWM mode 1
-	//TIM10-> CCER |= (1 << 0); //connects OC1 to TIM10_CH1
+	TIM10->CCMR1 |= (6 << 4); //TIM10_CH1 in PWM mode 1
+	TIM10-> CCER |= (1 << 0); //connects OC1 to TIM10_CH1
 	
-	//TIM10->PSC = 79; //prescaler
-	//TIM10-> ARR = 49999; //periode
-	//TIM10->CCR1 = 4000; // Duty cycle                                                                                                           
+	TIM10->PSC = 79; //prescaler
+	TIM10-> ARR = 49999; //periode
+	TIM10->CCR1 = 4000; // Duty cycle                                                                                                           
 	
-	//TIM10->CR1 |= (1 << 0); //starts counter
+	TIM10->CR1 |= (1 << 0); //starts counter
 	
 	// Potentiomètre 
 	RCC->AHB2ENR |= (1<<10);
@@ -108,7 +113,26 @@ int main(void)
 	
 	TIM11->CR1 |= (1 << 0); //starts counter
 	
+	// Interutpion
+	RCC->AHB1ENR |= (1 << 0);   // activate GPIOA
+	RCC->APB2ENR |= (1 << 14);  // activate SYSCFG (nécessaire pour EXTI)
+	RCC->APB1ENR |= (1 << 0);   // activate TIM2
 	
+	GPIOA->MODER &= ~(3 << 0);  // PA0 en mode input
+	SYSCFG->EXTICR[0] &= ~(0xF << 0); // EXTI0 -> Port A (valeur 0000)
+	
+	EXTI->RTSR |= (1 << 0);  // Rising Trigger activé sur ligne 0
+	EXTI->FTSR |= (1 << 0);  // Falling Trigger activé sur ligne 0
+	EXTI->IMR  |= (1 << 0);  // démasque la ligne 0 (autorise l'interruption)
+	
+	NVIC_EnableIRQ(EXTI0_IRQn);   // ou NVIC->ISER[0] |= (1 << 6);
+	
+	TIM2->PSC = 15;        // horloge à 16MHz / (15+1) = 1MHz -> tick de 1µs
+	TIM2->ARR = 0xFFFFFFFF; // valeur max (32 bits)
+	TIM2->CNT = 0;
+	// On NE met PAS CEN à 1 ici : le timer reste à l'arrêt
+	
+
 	
 	/**********************************
 	Fin Initialisation périphérique

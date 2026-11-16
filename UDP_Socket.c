@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
+extern void servo_set_angle(int deg);
 int32_t udp_sock;                      // UDP socket handle
 
 // Fonction de rappel appelée automatiquement à chaque datagramme UDP reçu
@@ -35,7 +35,7 @@ uint32_t udp_cb_func (int32_t socket, const NET_ADDR *addr, const uint8_t *buf, 
     if (sscanf(command, "ANGLE %d", &angle) == 1) {
         // Commande ANGLE reçue
         if (angle >= 0 && angle <= 180) {
-            GPIOI->ODR ^= (1 << 1); // Inverse l'état de la LED
+            servo_set_angle(angle); // Inverse l'état de la LED
             sprintf(response, "OK\n");
         } else {
             sprintf(response, "ERR INVALID_ANGLE\n");
