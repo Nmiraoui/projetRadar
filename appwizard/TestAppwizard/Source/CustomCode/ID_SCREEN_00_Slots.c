@@ -20,7 +20,6 @@ Purpose     : AppWizard managed file, function content could be changed
 
 /*** Begin of user code area ***/
 #include "stm32f7xx.h"                  // Device header
-
 /*** End of user code area ***/
 
 /*********************************************************************
@@ -87,20 +86,6 @@ void ID_SCREEN_00__APPW_NOTIFICATION_INITDIALOG__ID_TIMER_00__APPW_JOB_START(APP
   GUI_USE_PARA(hScreen);
   GUI_USE_PARA(pMsg);
   GUI_USE_PARA(pResult);
-	
-	if (GPIOA->IDR & (1 << 0))   // la broche est à 1 -> front montant
-	{
-			TIM2->CNT = 0;          // on remet le compteur à zéro
-			TIM2->CR1 |= (1 << 0);  // CEN = 1 -> on démarre le compteur
-	}
-	
-	else                         // la broche est à 0 -> front descendant
-	{
-			TIM2->CR1 &= ~(1 << 0); // CEN = 0 -> on arrête le compteur
-			// ici TIM2->CNT contient la durée (en µs) pendant laquelle la broche était à 1
-	}
-
-	EXTI->PR |= (1 << 0);  // IMPORTANT : on efface le flag en écrivant 1 dessus
 }
 
 /*********************************************************************

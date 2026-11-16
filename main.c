@@ -5,6 +5,8 @@ extern int Init_GUIThread (void);
 extern void Init_Ethernet (void);
 extern void servo_set_angle(int deg);
 
+volatile float     DIST = -1.0f;
+
 #ifdef _RTE_
 #include "RTE_Components.h"             // Component selection
 #endif
@@ -54,6 +56,28 @@ void servo_set_angle(int deg)
 	TIM10->CCR1 = ccr_val;
 }
 
+void EXTI9_5_IRQHandler(void)
+{
+	if (EXTI->PR & (1 << 6))   // vérifie que c'est bien la ligne 6
+	{
+		if (GPIOE->IDR & (1 << 6))   // broche à 1 -> front montant
+		{
+				TIM2->CNT = 0;
+				TIM2->CR1 |= (1 << 0);   // démarre le compteur
+		}
+		else                          // broche à 0 -> front descendant
+		{
+				TIM2->CR1 &= ~(1 << 0);  // arrête le compteur
+				mesure_us = TIM2->CNT;
+
+        DIST = mesure_us * 17.0f / 1000.0f;  // formule HC-SR04
+
+        nouvelle_mesure = 1;
+		}
+
+		EXTI->PR |= (1 << 6);  // acquitte le flag de la ligne 6
+	}
+}
 
 int main(void)
 {
@@ -114,20 +138,21 @@ int main(void)
 	TIM11->CR1 |= (1 << 0); //starts counter
 	
 	// Interutpion
-	RCC->AHB1ENR |= (1 << 0);   // activate GPIOA
+	RCC->AHB1ENR |= (1 << 4);   // activate GPIOE
 	RCC->APB2ENR |= (1 << 14);  // activate SYSCFG (nécessaire pour EXTI)
 	RCC->APB1ENR |= (1 << 0);   // activate TIM2
 	
-	GPIOA->MODER &= ~(3 << 0);  // PA0 en mode input
-	SYSCFG->EXTICR[0] &= ~(0xF << 0); // EXTI0 -> Port A (valeur 0000)
+	GPIOE->MODER &= ~(3 << 12);  // PE6 en mode input
+	SYSCFG->EXTICR[1] &= ~(0xF << 8);  // on efface les bits concernant EXTI6
+	SYSCFG->EXTICR[1] |= (4 << 8);     // EXTI6 -> Port E (valeur 0100)
 	
-	EXTI->RTSR |= (1 << 0);  // Rising Trigger activé sur ligne 0
-	EXTI->FTSR |= (1 << 0);  // Falling Trigger activé sur ligne 0
-	EXTI->IMR  |= (1 << 0);  // démasque la ligne 0 (autorise l'interruption)
+	EXTI->RTSR |= (1 << 6);  // Rising Trigger sur ligne 6
+	EXTI->FTSR |= (1 << 6);  // Falling Trigger sur ligne 6
+	EXTI->IMR  |= (1 << 6);  // démasque la ligne 6
 	
-	NVIC_EnableIRQ(EXTI0_IRQn);   // ou NVIC->ISER[0] |= (1 << 6);
+	NVIC_EnableIRQ(EXTI9_5_IRQn);
 	
-	TIM2->PSC = 15;        // horloge à 16MHz / (15+1) = 1MHz -> tick de 1µs
+	TIM2->PSC = 199;        // horloge à 16MHz / (15+1) = 1MHz -> tick de 1µs
 	TIM2->ARR = 0xFFFFFFFF; // valeur max (32 bits)
 	TIM2->CNT = 0;
 	// On NE met PAS CEN à 1 ici : le timer reste à l'arrêt
