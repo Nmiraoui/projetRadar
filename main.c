@@ -60,23 +60,23 @@ void servo_set_angle(int deg)
 
 void EXTI9_5_IRQHandler(void)
 {
-	if (EXTI->PR & (1 << 6))
+	if (EXTI->PR & (1 << 6))               // ligne 6 (PG6 = Echo)
 	{
-		EXTI->PR = (1 << 6);                // acquitte le flag (écrire 1)
+		EXTI->PR = (1 << 6);               // acquitte le flag (ecrire 1)
 
-		if (GPIOG->IDR & (1 << 6))          // front montant : Echo = 1
+		if (GPIOG->IDR & (1 << 6))         // front montant : Echo = 1
 		{
-			GPIOI->BSRR = (1 << 1);         // LED1 allumée
+			GPIOI->BSRR = (1 << 1);        // LED1 (PI1) allumee
 			TIM2->CR1 &= ~(1 << 0);
 			TIM2->CNT = 0;
-			TIM2->CR1 |= (1 << 0);          // démarre le compteur
+			TIM2->CR1 |= (1 << 0);         // demarre le compteur
 		}
-		else                                // front descendant : Echo = 0
+		else                               // front descendant : Echo = 0
 		{
-			GPIOI->BSRR = (1 << (1 + 16));  // LED1 éteinte
-			TIM2->CR1 &= ~(1 << 0);
+			GPIOI->BSRR = (1 << (1 + 16)); // LED1 eteinte
+			TIM2->CR1 &= ~(1 << 0);        // arrete le compteur
 			mesure_us = TIM2->CNT;
-			DIST = mesure_us * 17.0f / 1000.0f;
+			DIST = mesure_us * 17.0f / 1000.0f;  // formule HC-SR04 (cm)
 			nouvelle_mesure = 1;
 		}
 	}
@@ -141,7 +141,7 @@ int main(void)
 	
 	TIM11->PSC = 399; //prescaler
 	TIM11-> ARR = 49999; //periode
-	TIM11->CCR1 = 5; // Duty cycle
+	TIM11->CCR1 = 8; // Duty cycle
 	
 	TIM11->CR1 |= (1 << 0); //starts counter
 
@@ -150,9 +150,9 @@ int main(void)
 	RCC->APB2ENR |= (1 << 14);         // SYSCFG
 	RCC->APB1ENR |= (1 << 0);          // TIM2
 
-	GPIOG->MODER &= ~(3 << 12);        // PG6 en entrée
+	GPIOG->MODER &= ~(3 << 12);        // PG6 en entree
 	GPIOG->PUPDR &= ~(3 << 12);
-	GPIOG->PUPDR |=  (2 << 12);        // pull-down : évite un signal flottant
+	GPIOG->PUPDR |=  (2 << 12);        // pull-down
 
 	SYSCFG->EXTICR[1] &= ~(0xF << 8);
 	SYSCFG->EXTICR[1] |=  (6 << 8);    // EXTI6 -> port G
@@ -161,14 +161,14 @@ int main(void)
 	EXTI->FTSR |= (1 << 6);
 	EXTI->IMR  |= (1 << 6);
 
-	TIM2->PSC = 99;                    // 100 MHz / 100 = 1 µs par tick
+	TIM2->PSC = 99;                    // APB1 : 100 MHz / 100 = 1 us par tick
 	TIM2->ARR = 0xFFFFFFFF;
-	TIM2->EGR = 1;
-	TIM2->CNT = 0;
+	TIM2->EGR = 1;                     // charge le prescaler
+	TIM2->CNT = 0;                     // le timer reste arrete (demarre dans l'interruption)
 
 	NVIC_SetPriority(EXTI9_5_IRQn, 5);
 	NVIC_EnableIRQ(EXTI9_5_IRQn);
-	
+
 	/**********************************
 	Fin Initialisation périphérique
 	**********************************/
