@@ -60,24 +60,25 @@ void servo_set_angle(int deg)
 
 void EXTI9_5_IRQHandler(void)
 {
-	if (EXTI->PR & (1 << 6))   // vérifie que c'est bien la ligne 6
+	if (EXTI->PR & (1 << 6))
 	{
-		if (GPIOE->IDR & (1 << 6))   // broche à 1 -> front montant
+		EXTI->PR = (1 << 6);                // acquitte le flag (écrire 1)
+
+		if (GPIOG->IDR & (1 << 6))          // front montant : Echo = 1
 		{
-				TIM2->CNT = 0;
-				TIM2->CR1 |= (1 << 0);   // démarre le compteur
+			GPIOI->BSRR = (1 << 1);         // LED1 allumée
+			TIM2->CR1 &= ~(1 << 0);
+			TIM2->CNT = 0;
+			TIM2->CR1 |= (1 << 0);          // démarre le compteur
 		}
-		else                          // broche à 0 -> front descendant
+		else                                // front descendant : Echo = 0
 		{
-				TIM2->CR1 &= ~(1 << 0);  // arrête le compteur
-				mesure_us = TIM2->CNT;
-
-        DIST = mesure_us * 17.0f / 1000.0f;  // formule HC-SR04
-
-        nouvelle_mesure = 1;
+			GPIOI->BSRR = (1 << (1 + 16));  // LED1 éteinte
+			TIM2->CR1 &= ~(1 << 0);
+			mesure_us = TIM2->CNT;
+			DIST = mesure_us * 17.0f / 1000.0f;
+			nouvelle_mesure = 1;
 		}
-
-		EXTI->PR |= (1 << 6);  // acquitte le flag de la ligne 6
 	}
 }
 
@@ -144,26 +145,29 @@ int main(void)
 	
 	TIM11->CR1 |= (1 << 0); //starts counter
 
-	// Interutpion
-	RCC->AHB1ENR |= (1 << 4);   // activate GPIOE
-	RCC->APB2ENR |= (1 << 14);  // activate SYSCFG (nécessaire pour EXTI)
-	RCC->APB1ENR |= (1 << 0);   // activate TIM2
-	
-	GPIOE->MODER &= ~(3 << 12);  // PE6 en mode input
-	SYSCFG->EXTICR[1] &= ~(0xF << 8);  // on efface les bits concernant EXTI6
-	SYSCFG->EXTICR[1] |= (4 << 8);     // EXTI6 -> Port E (valeur 0100)
-	
-	EXTI->RTSR |= (1 << 6);  // Rising Trigger sur ligne 6
-	EXTI->FTSR |= (1 << 6);  // Falling Trigger sur ligne 6
-	EXTI->IMR  |= (1 << 6);  // démasque la ligne 6
-	
-	NVIC_EnableIRQ(EXTI9_5_IRQn);
-	
-	TIM2->PSC = 99;          // TIM2 est sur APB1 : 100 MHz / 100 = 1 MHz, soit 1 µs par tick
+	// Interruption Echo (HC-SR04) sur PG6
+	RCC->AHB1ENR |= (1 << 6);          // GPIOG
+	RCC->APB2ENR |= (1 << 14);         // SYSCFG
+	RCC->APB1ENR |= (1 << 0);          // TIM2
+
+	GPIOG->MODER &= ~(3 << 12);        // PG6 en entrée
+	GPIOG->PUPDR &= ~(3 << 12);
+	GPIOG->PUPDR |=  (2 << 12);        // pull-down : évite un signal flottant
+
+	SYSCFG->EXTICR[1] &= ~(0xF << 8);
+	SYSCFG->EXTICR[1] |=  (6 << 8);    // EXTI6 -> port G
+
+	EXTI->RTSR |= (1 << 6);
+	EXTI->FTSR |= (1 << 6);
+	EXTI->IMR  |= (1 << 6);
+
+	TIM2->PSC = 99;                    // 100 MHz / 100 = 1 µs par tick
 	TIM2->ARR = 0xFFFFFFFF;
-	TIM2->EGR = 1;           // force le chargement du prescaler
+	TIM2->EGR = 1;
 	TIM2->CNT = 0;
-	// On NE met PAS CEN à 1 ici : le timer reste à l'arrêt
+
+	NVIC_SetPriority(EXTI9_5_IRQn, 5);
+	NVIC_EnableIRQ(EXTI9_5_IRQn);
 	
 	/**********************************
 	Fin Initialisation périphérique
