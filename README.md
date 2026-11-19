@@ -1,16 +1,16 @@
-# 📡 Projet Radar à Balayage Ultrason (STM32 & Qt/C++)
+#  Projet Radar à Balayage Ultrason (STM32 & Qt/C++)
 
 > Réalisation d'un système de type radar interactif combinant une carte STM32F746G-DISCO, un capteur à ultrasons HC-SR04, un servomoteur et une application de bureau connectée en réseau (UDP).
 
 ---
 
-## 📸 Présentation du Montage
+##  Présentation du Montage
 
 ![Montage du Projet Radar](image0.jpg)
 
 ---
 
-## 📋 Sommaire
+##  Sommaire
 1. [Contexte et Objectif](#1-contexte-et-objectif)
 2. [Matériel Utilisé](#2-matériel-utilisé)
 3. [Architecture Générale](#3-architecture-générale)
