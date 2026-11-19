@@ -1,0 +1,409 @@
+================================================================================
+RAPPORT DE PROJET : RADAR À BALAYAGE ULTRASON
+Carte STM32F746G-DISCO, capteur HC-SR04, servomoteur, interface PC
+================================================================================
+
+SOMMAIRE
+  1. Contexte et objectif
+  2. Matériel utilisé
+  3. Architecture générale
+  4. Configuration de l'horloge
+  5. Capteur ultrason HC-SR04
+  6. Servomoteur
+  7. Partie réseau (serveur UDP sur la carte)
+  8. Partie interface (application PC et écran de la carte)
+  9. Problèmes rencontrés et solutions
+ 10. Points de vigilance
+ 11. Conclusion et améliorations possibles
+
+
+--------------------------------------------------------------------------------
+1. CONTEXTE ET OBJECTIF
+--------------------------------------------------------------------------------
+
+  Objectif : réaliser un radar à partir d'une carte STM32, d'un capteur
+  ultrason et d'un servomoteur. Le servomoteur oriente le capteur sur un
+  angle de balayage de 0 à 180 degrés ; à chaque position, la distance de
+  l'obstacle est mesurée. L'ensemble des mesures est récupéré à distance par
+  un PC via le réseau.
+
+  Démarche suivie :
+    1) mise en place et test du capteur ultrason
+    2) mise en place et test du servomoteur
+    3) création du serveur UDP sur la carte
+    4) création de l'interface PC
+    5) intégration et correction des problèmes
+
+  Dépôt GitHub : https://github.com/Nmiraoui/projetRadar.git
+    Code Carte      : projet Keil (main.c, configuration.c, UDP_Socket.c,
+                      écran AppWizard)
+    Code Interface  : application Qt/C++ (RadarPC)
+
+
+--------------------------------------------------------------------------------
+2. MATÉRIEL UTILISÉ
+--------------------------------------------------------------------------------
+
+  Carte            : STM32F746G-DISCO (microcontrôleur STM32F746, Cortex-M7)
+  Capteur          : HC-SR04 (ultrason)
+  Actionneur       : servomoteur commandé en PWM
+                     Référence : [A COMPLETER]
+  Environnement    : Keil MDK (RTX5, MDK-Net, emWin/AppWizard) pour la carte,
+                     Qt 6 pour l'interface PC
+  Liaison          : Ethernet, protocole UDP
+
+  Brochage utilisé (à respecter, voir section 10) :
+
+    Fonction            Broche   Périphérique        Remarque
+    ------------------  -------  ------------------  --------------------------
+    Commande servo      PF6      TIM10_CH1 (AF3)     PWM 50 Hz
+    Trig du capteur     PF7      TIM11_CH1 (AF3)     impulsion périodique
+    Echo du capteur     PG6      EXTI6 + TIM2        mesure de la durée
+    LED de contrôle     PI1      GPIO sortie         allumée pendant l'écho
+
+
+--------------------------------------------------------------------------------
+3. ARCHITECTURE GÉNÉRALE
+--------------------------------------------------------------------------------
+
+  Le système repose sur le RTOS Keil RTX5. Trois éléments tournent en
+  parallèle :
+
+    - le serveur UDP (initialisé par Init_Ethernet) et sa tâche de balayage
+      Thread_Scan,
+    - la tâche graphique de l'écran de la carte (Init_GUIThread),
+    - les périphériques matériels (timers et interruption), qui fonctionnent
+      sans mobiliser le processeur.
+
+  Chaîne de mesure :
+
+    TIM11 (PF7) --> Trig --> HC-SR04 --> Echo --> PG6
+         --> interruption EXTI6 --> TIM2 mesure la durée --> variable DIST
+
+  Chaîne de commande :
+
+    Commande UDP --> udp_cb_func --> servo_set_angle --> TIM10 (PF6) --> servo
+
+  Les valeurs sont partagées entre l'interruption et les tâches par des
+  variables globales volatile (mesure_us, DIST, nouvelle_mesure).
+
+
+--------------------------------------------------------------------------------
+4. CONFIGURATION DE L'HORLOGE
+--------------------------------------------------------------------------------
+
+  Fichier : configuration.c, fonction configuration_overclock().
+
+  La carte est configurée à 200 MHz (HSE 25 MHz, PLL M=25, N=400, P=2,
+  overdrive activé). Cette configuration est nécessaire pour l'écran LCD.
+
+    SYSCLK / HCLK       : 200 MHz
+    APB1 (prédiviseur 4): 50 MHz  -> horloge des timers APB1 : 100 MHz
+    APB2 (prédiviseur 2): 100 MHz -> horloge des timers APB2 : 200 MHz
+
+  Les timers reçoivent le double de la fréquence du bus APB lorsque son
+  prédiviseur est différent de 1. Résultat :
+    - TIM2 (APB1)           : 100 MHz
+    - TIM10 et TIM11 (APB2) : 200 MHz
+
+  Le cours part d'une horloge par défaut de 16 MHz. Tous les calculs de
+  prédiviseur (PSC) et de période (ARR) doivent donc être refaits avec les
+  fréquences ci-dessus (voir section 9, problème 1).
+
+
+--------------------------------------------------------------------------------
+5. CAPTEUR ULTRASON HC-SR04
+--------------------------------------------------------------------------------
+
+5.1 Principe de fonctionnement
+
+  Le HC-SR04 possède deux signaux utiles :
+    - Trig : le microcontrôleur envoie une impulsion d'au moins 10 µs ;
+    - Echo : le capteur renvoie une impulsion dont la durée est
+             proportionnelle à la distance de l'obstacle.
+
+  Formule utilisée (documentation constructeur) :
+
+      distance (cm) = durée de l'écho (µs) x 17 / 1000
+                    (équivalent à durée / 58,8)
+
+5.2 Génération du signal Trig (TIM11, PF7)
+
+  Le timer TIM11 génère automatiquement l'impulsion, sans intervention du
+  processeur.
+
+    Broche PF7 en fonction alternative AF3 (TIM11_CH1)
+    PWM mode 1 sur le canal 1
+    PSC = 399   : 200 MHz / 400 = 500 kHz, soit 2 µs par tick
+    ARR = 49999 : période de 100 ms (une mesure toutes les 100 ms)
+    CCR1 = 8    : impulsion de 16 µs (supérieure aux 10 µs requis)
+
+  Remarque : le commentaire du code indique "1 Hz" mais la fréquence réelle
+  est de 10 Hz avec ces valeurs.
+
+5.3 Mesure de l'écho (PG6, EXTI6, TIM2)
+
+  L'écho est mesuré par interruption externe, avec TIM2 comme chronomètre.
+
+  Initialisation :
+    - horloges GPIOG, SYSCFG et TIM2 activées ;
+    - PG6 en entrée, résistance de rappel à la masse (pull-down) ;
+    - ligne EXTI6 routée sur le port G (SYSCFG->EXTICR[1], valeur 6) ;
+    - déclenchement sur front montant ET front descendant ;
+    - TIM2 : PSC = 99 -> 100 MHz / 100 = 1 MHz, soit 1 tick = 1 µs,
+      ARR = 0xFFFFFFFF (compteur 32 bits) ; le timer reste arrêté ;
+    - interruption EXTI9_5 activée dans le NVIC, priorité 5.
+
+  Fonctionnement de l'interruption EXTI9_5_IRQHandler :
+    - front montant (PG6 = 1) : LED PI1 allumée, TIM2 remis à zéro puis
+      démarré ;
+    - front descendant (PG6 = 0) : LED PI1 éteinte, TIM2 arrêté, la valeur
+      du compteur donne la durée de l'écho en µs (mesure_us), la distance
+      est calculée et stockée dans DIST (en cm), le drapeau nouvelle_mesure
+      est levé.
+    - le drapeau d'interruption est acquitté en écrivant 1 dans EXTI->PR.
+
+  La fonction distance_cm() renvoie la dernière valeur de DIST. Une valeur
+  négative (initialement -1) signifie qu'aucune mesure valide n'est
+  disponible.
+
+5.4 Test du capteur
+
+  La LED PI1 reflète l'état de la broche Echo : elle s'allume pendant la
+  durée de l'écho. C'est un moyen simple de vérifier que le capteur répond,
+  sans écran ni PC. Voir aussi la section 9, problème 3.
+
+
+--------------------------------------------------------------------------------
+6. SERVOMOTEUR
+--------------------------------------------------------------------------------
+
+6.1 Principe
+
+  Un servomoteur se commande par un signal PWM de période 20 ms (50 Hz). La
+  largeur de l'impulsion détermine l'angle de l'axe.
+
+6.2 Configuration (TIM10, PF6)
+
+    Broche PF6 en fonction alternative AF3 (TIM10_CH1)
+    PWM mode 1 sur le canal 1
+    PSC = 79    : 200 MHz / 80 = 2,5 MHz, soit 0,4 µs par tick
+    ARR = 49999 : période de 20 ms, soit 50 Hz
+    CCR1        : largeur d'impulsion (le rapport cyclique)
+
+6.3 Fonction servo_set_angle(deg)
+
+    CCR1 = 2000 + (deg x 4000) / 180
+
+  L'angle est borné entre 0 et 180 degrés.
+
+    Angle     CCR1     Largeur d'impulsion
+    0 deg     2000     0,8 ms
+    90 deg    4000     1,6 ms
+    180 deg   6000     2,4 ms
+
+  Si la plage d'impulsion du servomoteur utilisé diffère, ajuster les
+  constantes 2000 et 4000 de cette fonction.
+
+
+--------------------------------------------------------------------------------
+7. PARTIE RÉSEAU (SERVEUR UDP SUR LA CARTE)
+--------------------------------------------------------------------------------
+
+  Fichier : UDP_Socket.c (pile réseau MDK-Net).
+
+7.1 Mise en place
+
+  Init_Ethernet() initialise la pile réseau, crée la tâche Thread_Scan, puis
+  ouvre un socket UDP sur le port 5000 de la carte. La fonction de rappel
+  udp_cb_func est appelée à chaque datagramme reçu.
+
+7.2 Protocole de commandes
+
+  Les commandes sont des chaînes de texte terminées par un retour à la ligne.
+
+    Commande       Action                          Réponse
+    -------------  ------------------------------  ---------------------------
+    ANGLE n        place le servo à n degrés       OK
+                   (n de 0 à 180)                  ERR angle si invalide
+    DIST           renvoie la dernière distance    DIST x.x
+                                                   DIST TIMEOUT si pas d'écho
+    SCAN           balayage de 0 à 180 degrés,     une ligne "angle distance"
+                   pas de 5 degrés                 par position, puis END
+    (autre)                                        ERR commande
+
+  Autres réponses d'erreur : ERR taille (message vide ou trop long),
+  ERR occupe (un balayage est déjà en cours).
+
+7.3 Fonctionnement du balayage (SCAN)
+
+  Le balayage s'exécute dans une tâche dédiée (Thread_Scan) afin de ne pas
+  bloquer la pile réseau. La commande SCAN réveille la tâche par un drapeau.
+
+  Pour chaque angle de 0 à 180 par pas de 5 degrés :
+    1) positionner le servo,
+    2) attendre 200 ms (stabilisation),
+    3) lire la distance,
+    4) écrire la ligne "angle distance" (ou "angle TIMEOUT"),
+    5) attendre 60 ms.
+
+  Les 37 mesures sont regroupées et renvoyées en UN seul datagramme, terminé
+  par END. La durée totale d'un balayage est d'environ 10 secondes. Pendant
+  ce temps, la carte répond ERR occupe aux autres commandes.
+
+  Limite : un datagramme UDP ne dépasse pas environ 1472 octets, ce qui
+  impose un maximum de 100 mesures par réponse (SCAN_MESURES_MAX).
+
+
+--------------------------------------------------------------------------------
+8. PARTIE INTERFACE
+--------------------------------------------------------------------------------
+
+8.1 Application PC (Qt / C++), dossier "Code Interface"
+
+  Fichiers : mainwindow.cpp, mainwindow.h, mainwindow.ui, RadarPC.pro
+
+  Éléments de la fenêtre :
+    - un curseur (0 à 180) et un champ affichant l'angle choisi,
+    - un bouton ANGLE : envoie "ANGLE n",
+    - un bouton DISTANCE : envoie "DIST" et affiche la réponse,
+    - un bouton SCAN : envoie "SCAN" et affiche le résultat du balayage dans
+      une zone de texte.
+
+  Communication :
+    - socket UDP (QUdpSocket) lié au port local 8001 ;
+    - adresse de la carte codée en dur dans le code (variable ipSTM32) ;
+    - la réponse est lue par le slot readData() : un rapport multi-lignes
+      (SCAN ou erreur) va dans la zone de texte, une réponse courte
+      (DIST) va dans le champ distance.
+
+  Le port de destination utilisé dans le code PC doit correspondre au port
+  ouvert sur la carte (5000), ou au port redirigé par le routeur (voir
+  section 9, problème 5).
+
+8.2 Écran de la carte (AppWizard / emWin)
+
+  L'écran tactile de la carte est géré par une tâche graphique AppWizard
+  (fichier ID_SCREEN_00_Slots.c). Il contient les widgets des TP précédents
+  (interrupteur sur PI1, curseur vers le DAC, bouton rotatif).
+  L'affichage de la distance sur l'écran peut se faire dans le callback
+  du timer AppWizard, à partir du drapeau nouvelle_mesure : l'écran ne doit
+  jamais être modifié depuis l'interruption.
+
+
+--------------------------------------------------------------------------------
+9. PROBLÈMES RENCONTRÉS ET SOLUTIONS
+--------------------------------------------------------------------------------
+
+  Problème 1 : fréquence d'horloge différente (carte overclockée)
+  --------------------------------------------------------------
+    Symptôme : signaux PWM différents de ceux attendus ; servo et capteur
+               ne réagissaient pas correctement.
+    Cause    : les valeurs de PSC et ARR avaient été calculées pour 16 MHz
+               (valeur par défaut du cours) alors que la carte tourne à
+               200 MHz, avec des horloges de timers de 100 MHz (APB1) et
+               200 MHz (APB2).
+    Importance : la précision du signal PWM est essentielle. Le servo exige
+               une période de 20 ms et des impulsions de largeur précise ;
+               le capteur exige une impulsion Trig d'au moins 10 µs ; la
+               mesure d'écho dépend de l'échelle de temps de TIM2.
+    Solution : recalculer tous les paramètres à partir de la fréquence réelle
+               de chaque timer (section 4), en vérifiant à l'oscilloscope
+               ou avec un analyseur logique.
+    Formules :
+               f_CNT = f_timer / (PSC + 1)
+               f_PWM = f_timer / ((PSC + 1) x (ARR + 1))
+
+  Problème 2 : broche Echo inutilisable (PE6)
+  -------------------------------------------
+    Symptôme : aucune mesure avec PE6 comme broche Echo, malgré une
+               configuration EXTI et un compteur corrects.
+    Solution : utiliser les broches définies pour le projet (PG6 pour
+               l'Echo). Une broche de la carte peut être utilisée par un
+               autre périphérique (écran, mémoire, Ethernet...), ce qui
+               rend sa configuration inopérante.
+
+  Problème 3 : absence de signal, capteur défectueux
+  --------------------------------------------------
+    Symptôme : aucun signal reçu sur Echo malgré un code correct.
+    Cause    : le capteur HC-SR04 lui-même était hors service.
+    Leçon    : en cas d'absence de signal, vérifier le matériel avant de
+               modifier le code (alimentation, câblage, présence de
+               l'impulsion Trig, essai avec un autre capteur). La LED PI1
+               aide à voir si l'écho arrive.
+
+  Problème 4 : régression après une modification
+  ----------------------------------------------
+    Symptôme : les moteurs ne tournaient plus alors que le projet
+               fonctionnait deux heures plus tôt.
+    Solution : le dépôt Git conserve les versions successives. Le commit
+               "test moteur" (version fonctionnelle) a servi de référence
+               pour comparer avec la version défaillante.
+    Leçon    : valider et enregistrer (commit) chaque étape qui fonctionne.
+
+  Problème 5 : communication UDP depuis l'extérieur du réseau
+  -----------------------------------------------------------
+    Symptôme : le serveur UDP répondait aux trames du PC en local, mais
+               l'interface ne communiquait pas depuis l'extérieur du réseau.
+    Causes   : redirection de port (port forwarding) mal configurée ;
+               adresse IP et port de destination non conformes à ceux de la
+               carte (port 5000 sur la carte).
+    Solution : vérifier la cohérence de la chaîne complète :
+                 adresse IP de la carte, port d'écoute de la carte (5000),
+                 règle de redirection du routeur (port externe -> IP de la
+                 carte : port 5000), adresse et port utilisés dans le code
+                 PC.
+    Point à contrôler dans le code PC : l'envoi se fait actuellement vers le
+               port 8001 ; il doit viser 5000, sauf si le routeur traduit
+               8001 vers 5000.
+
+  Problème 6 : liaison entre les angles et les mesures dans l'interface
+  ---------------------------------------------------------------------
+    Symptôme : la mise en relation des angles et des distances dans
+               l'interface n'était pas satisfaisante par rapport aux
+               fonctions développées côté carte.
+    État     : le résultat du SCAN est affiché sous forme de texte
+               (une ligne "angle distance"), sans représentation graphique
+               de type radar.
+    Amélioration : exploiter les 37 lignes reçues pour tracer les points
+               en coordonnées polaires.
+
+
+--------------------------------------------------------------------------------
+10. POINTS DE VIGILANCE
+--------------------------------------------------------------------------------
+
+  - Toujours recalculer PSC et ARR avec la fréquence réelle du timer, jamais
+    avec celle du cours.
+  - Respecter le brochage du projet (PF6, PF7, PG6, PI1).
+  - Sans signal sur Echo : contrôler d'abord le capteur et le câblage.
+  - Ne jamais afficher sur l'écran ni appeler de fonction bloquante depuis
+    une interruption : poser un drapeau et traiter dans une tâche.
+  - Acquitter le drapeau EXTI (écrire 1 dans EXTI->PR), sinon l'interruption
+    se redéclenche en boucle.
+  - Les lignes EXTI5 à EXTI9 partagent le même vecteur EXTI9_5_IRQHandler.
+  - Pas de timeout logiciel : si l'écho ne retombe jamais à 0, la mesure
+    reste en attente.
+  - Le balayage dure environ 10 s ; ne pas envoyer d'autre commande pendant
+    ce temps (réponse ERR occupe).
+  - Vérifier que le port utilisé dans l'interface PC correspond au port de la
+    carte, ou au port redirigé par le routeur.
+
+
+--------------------------------------------------------------------------------
+11. CONCLUSION ET AMÉLIORATIONS POSSIBLES
+--------------------------------------------------------------------------------
+
+  Le système réalise un balayage de 0 à 180 degrés avec mesure de distance
+  par pas de 5 degrés, commandable à distance en UDP depuis un PC.
+
+  Améliorations envisageables :
+    - affichage graphique du radar (coordonnées polaires) sur le PC et sur
+      l'écran de la carte ;
+    - timeout logiciel sur la mesure d'écho ;
+    - réglage du pas et de la plage d'angle depuis l'interface ;
+    - saisie de l'adresse IP de la carte dans l'interface plutôt que dans le
+      code ;
+    - balayage continu avec rafraîchissement automatique.
+
+================================================================================
