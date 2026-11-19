@@ -6,7 +6,7 @@
 
 ##  Présentation du Montage
 
-![Montage du Projet Radar](image0.jpg)
+![Montage du Projet Radar](image0.jpeg)
 
 ---
 
